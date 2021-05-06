@@ -42,6 +42,7 @@ def train_model(model, train_input_2channels, train_labels):
     train_input[0:train_input_2channels.size(0),:,:] = train_input_2channels[:,0,:,:]
     train_input[1000:2000,:,:] = train_input_2channels[:,1,:,:]
 
+
     train_class = torch.empty(2000, dtype=torch.int64)
     train_class[0:1000] = train_labels[:,0]
     train_class[1000:2000] = train_labels[:,1]
@@ -85,10 +86,11 @@ def compute_nb_errors(model, test_input, test_target):
                 nb_errors = nb_errors +1
     return nb_errors
 
-model = Net()
-train_model(model, train_input, train_classes)
-nb_train_errors = compute_nb_errors(model, train_input, train_target)
-nb_test_errors = compute_nb_errors(model, test_input, test_target)
+if __name__ == '__main__':
+    model = Net()
+    train_model(model, train_input, train_classes)
+    nb_train_errors = compute_nb_errors(model, train_input, train_target)
+    nb_test_errors = compute_nb_errors(model, test_input, test_target)
 
-print(f"Training error: {nb_train_errors/1000*100}%")
-print(f"Test error: {nb_test_errors/1000*100}%")
+    print(f"Training error: {nb_train_errors/1000*100}%")
+    print(f"Test error: {nb_test_errors/1000*100}%")
