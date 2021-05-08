@@ -3,7 +3,7 @@ import math
 
 def generate_disc_set(nb):
     input = empty(nb, 2).uniform_(0, 1) #[0, 1] uniformly distributed
-    target = input.sub(empty(1,2).fill_(0.5)).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
+    target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
     return input, target
 
 
