@@ -58,12 +58,6 @@ class Linear(Superclass):
         return self.parameters
 
 
-"""
-Sequential ( Linear(...) , ReLU(), .. Linear()
-self.modules [ ... ]
-"""
-
-
 class ReLU(Superclass):
     def __init__(self):
         self.param = []
@@ -129,17 +123,7 @@ class Sequential(Superclass):
     def forward(self,x):
         x0 = x
         for module in self.modules:
-            if isinstance(module, Linear):
-                # initialize the output tensor
-                x1 = torch.empty(x0.size(0), module.nb_output).zero_()
-            else:
-                x1 = torch.empty(x0.size())
-
-                #print("bmin: ", b, "bmax: ", b + batch_size)
-                #print("input shape" ,x0.narrow(0,b,batch_size).size())
-                #print("output shape", x1[b:b+batch_size,:].size())
             x1 = module.forward(x0)
-
             x0 = x1
         return x1
 
