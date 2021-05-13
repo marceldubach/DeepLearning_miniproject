@@ -22,22 +22,23 @@ class Linear(Superclass):
         self.nb_output = nb_output
         self.w = torch.empty(nb_output, nb_input).normal_(0, std_dev)  # initialize correct variances
         self.b = torch.empty(nb_output).normal_(0, std_dev)
-        self.parameters = [self.w, self.b]
+        self.param = [self.w, self.b]
 
         self.grad_b = None
         self.grad_w = None
         self.grad_x = None
         self.x = None
-        self.s = None
+        #self.s = None
 
     def forward(self, x):
         """
             input:      x of size [N x nb_input]
             returns :   s, where s = w*x + b [N x nb_output]
         """
-        self.x = x
-        self.s = x @ self.w.t() + self.b
-        return self.s
+        self.x = torch.empty(x.size()).zero_()
+        s = x @ self.w.t() + self.b
+        print("self.x stored")
+        return s
 
     def backward(self, grad_s):
         """
@@ -46,6 +47,8 @@ class Linear(Superclass):
                         grad_b (=dl_db) [nb_out],
                         grad_x (=dl_dx) [nb_in]
         """
+        print("size self.x", self.x.size())
+        print("size grad_s", grad_s.size())
         self.grad_w = grad_s.t() @ self.x
         self.grad_b = grad_s.sum(0)             # sum over all samples
         self.grad_x = (grad_s @ self.w).sum(0)  # [N x nb_out] * [nb_out x nb_in], summing over N gives nb_in
@@ -70,55 +73,100 @@ class ReLU(Superclass):
 
     def forward(self, s):  # x: [N x nb_input]
         self.s = s
-        self.x = self.activation_function(s)
+        self.x = s
+        self.x[s <= 0] = 0
         return self.x
 
-    def backward(self, y):
+    def backward(self):
         self.gradient = self.s.sign().add(1).div(2)
         return self.gradient
 
-    def activation_function(self, s):
-        x = s
-        x[s <= 0] = 0
-        return x
 
-
-"""
 class Tanh(Superclass):
     def __init__(self):
-        self.param = None
+        self.param = []
+        self.gradient = None
+        self.x = None
+        self.s = None
 
-    def forward(self):
+    def forward(self,s):
+        self.s = s
+        self.x = s.tanh()
+        return self.x
 
     def backward(self):
+        self.gradient = 1/self.s.cosh().pow(2)
+        return self.gradient
 
-    def activation(self):
-"""
 
-# class MSELoss(Superclass):
+class LossMSE:
+    def __init__(self):
+        self.loss = None
+        self.gradient = None
+
+    def compute_loss(self, output, target):
+        # create one hot matrix
+        target = target.view(target.size(0),-1)  # add a dimension
+        one_hot = torch.empty(target.size(0), output.size(1), dtype=torch.long).zero_()
+        one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
+        #  print("one hot", one_hot)
+        #  print("target", target)
+        sample_loss = (one_hot - output).norm(dim=1)
+        self.loss = sample_loss.sum()
+        #  print("loss ", self.loss)
+        sample_loss = sample_loss.view(output.size(0), 1)
+        self.gradient = (output - one_hot).div(sample_loss)
+        return self.loss
+
+    def get_gradient(self):
+        return self.gradient
 
 
 class Sequential(Superclass):
-    def __init__(self, modules):
+    def __init__(self, *modules):
         self.modules = modules
 
-    def forward(self, x):
+    def forward(self,x):
+        x0 = x
         for module in self.modules:
-            x = module.forward(x)
-        return x
+            if isinstance(module, Linear):
+                # initialize the output tensor
+                x1 = torch.empty(x0.size(0), module.nb_output).zero_()
+            else:
+                x1 = torch.empty(x0.size())
 
-    def backward(self, loss):
+                #print("bmin: ", b, "bmax: ", b + batch_size)
+                #print("input shape" ,x0.narrow(0,b,batch_size).size())
+                #print("output shape", x1[b:b+batch_size,:].size())
+            x1 = module.forward(x0)
+
+            x0 = x1
+        return x1
+
+    def backward(self, output, target, dl_dx):
+        dl_dx = dl_dx.view(output.size(0), -1) # resgaoe to [N x nb_out ]
+        dl_ds = dl_dx
+        cnt = len(self.modules)
         for module in self.modules[::-1]:  # start from the last one, loop to the first
-            grad = module.backward(loss)  # a revoir...
+            cnt -= 1
+            if isinstance(module, Linear):
+                print("module ", cnt, " is linear")
 
+                print("dl_ds shape: ", dl_ds.size())
+                grad_w, grad_b, grad_x = module.backward(dl_ds)
+                print("grad_x shape:", grad_x.size())
+                dl_dx = grad_x.view(1,-1)
+                print("dl_dx shape: ", dl_dx.size())
+                # update parameters (TODO: choose step size)
+                module.param[0] -= grad_w
+                module.param[1] -= grad_b
 
-""" PSEUDOCODE
-network = Sequential( (Linear(n_input, n_output), ReLU(),..) )
-
-output = netword.forward()
-loss = MSELoss.computeloss(output, ...)
-
-"""
+            else:
+                print("module ", cnt, " is nonlinear")
+                dsigma_ds = module.backward() # [N x nb_out]
+                print("dsigma_ds shape: ", dsigma_ds.size())
+                print("dl_dx shape: ", dl_dx.size())
+                dl_ds = dsigma_ds * dl_dx # elementwise [N x nb_out]
 
 """ 
 Notation:
@@ -127,25 +175,34 @@ x1 = sigma(s1)
 (in order to have the correct indices ...)
 """
 if __name__ == '__main__':
+    nb_samples = 100
     nb_input = 10
     nb_output = 2
-    linear = Linear(nb_input, nb_output)
-    relu = ReLU()
-    x0 = torch.empty(100, nb_input).uniform_()
-    s1 = linear.forward(x0)
-    x1 = relu.forward(s1)
+    x0 = torch.empty(nb_samples, nb_input).uniform_()
+    target = torch.randint(0, 2, (nb_samples,))
 
-    dl_dx1 = torch.empty(nb_output).uniform_()
-    dl_ds1 = relu.backward(dl_dx1)
-    dl_dw, dl_db, dl_dx0 = linear.backward(dl_ds1)
-    # TODO implement linear.backward -> dl_dx
-    print('x0:', x0.size())
-    print('s1:', s1.size())
-    print('x1:', x1.size())
 
-    print('dl_dx0:', dl_dx0.size())
-    print('dl_ds0:', dl_ds1.size())
-    print('dl_dx1:', dl_dx1.size())
+    network = Sequential(    Linear(nb_input,8),
+                             ReLU(),
+                             Linear(8,5),
+                             ReLU(),
+                             Linear(5,nb_output)    )
+    """
+    for module in network.modules:
+        print("module:")
+        for param in module.param:
+            print(param.size())
+    """
 
-    print('dl_dw:', dl_dw.size())
-    print('dl_db0', dl_db.size())
+    batch_size = 50
+    acc_loss = 0
+    criterion = LossMSE()
+    for b in range(0,x0.size(0),batch_size):
+        output = network.forward(x0.narrow(0,b,batch_size))
+        loss = criterion.compute_loss(output, target.narrow(0,b,batch_size))
+        dl_dx = criterion.get_gradient()
+        network.backward(output, target.narrow(0,b,batch_size), dl_dx)
+        acc_loss += loss.item()
+
+    print("Loss: ", acc_loss)
+
