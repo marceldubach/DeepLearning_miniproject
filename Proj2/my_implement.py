@@ -22,7 +22,7 @@ class Linear(Superclass):
         self.nb_output = nb_output
         self.w = torch.empty(nb_output, nb_input).normal_(0, std_dev)  # initialize correct variances
         self.b = torch.empty(nb_output).normal_(0, std_dev)
-        self.param = [self.w, self.b]
+        # self.param = [self.w, self.b]
 
         self.grad_b = None
         self.grad_w = None
@@ -37,7 +37,7 @@ class Linear(Superclass):
         """
         self.x = torch.empty(x.size()).zero_()
         s = x @ self.w.t() + self.b
-        print("self.x stored")
+        #print("self.x stored")
         return s
 
     def backward(self, grad_s):
@@ -47,12 +47,12 @@ class Linear(Superclass):
                         grad_b (=dl_db) [nb_out],
                         grad_x (=dl_dx) [nb_in]
         """
-        print("size self.x", self.x.size())
-        print("size grad_s", grad_s.size())
+        #print("size self.x", self.x.size())
+        #print("size grad_s", grad_s.size())
         self.grad_w = grad_s.t() @ self.x
-        self.grad_b = grad_s.sum(0)             # sum over all samples
+        self.grad_b = grad_s.sum(0)             # [ nb_out]
         self.grad_x = (grad_s @ self.w).sum(0)  # [N x nb_out] * [nb_out x nb_in], summing over N gives nb_in
-        return self.grad_w, self.grad_b, self.grad_x
+        # return self.grad_w, self.grad_b, self.grad_x
 
     def param(self):
         return self.parameters
@@ -72,7 +72,7 @@ class ReLU(Superclass):
         return self.x
 
     def backward(self):
-        self.gradient = self.s.sign().add(1).div(2)
+        self.gradient = self.s.sign().add(1).div(2).floor()
         return self.gradient
 
 
@@ -105,11 +105,14 @@ class LossMSE:
         one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
         #  print("one hot", one_hot)
         #  print("target", target)
-        sample_loss = (one_hot - output).norm(dim=1)
-        self.loss = sample_loss.sum()
-        #  print("loss ", self.loss)
+
+        sample_loss = (one_hot - output).pow(2).sum(dim=1)
         sample_loss = sample_loss.view(output.size(0), 1)
-        self.gradient = (output - one_hot).div(sample_loss)
+
+        self.loss = sample_loss.sum() # sum over all samples
+        #  print("loss ", self.loss)
+
+        self.gradient = 2 * (output - one_hot)
         return self.loss
 
     def get_gradient(self):
@@ -127,30 +130,39 @@ class Sequential(Superclass):
             x0 = x1
         return x1
 
-    def backward(self, output, target, dl_dx):
+    def backward(self, output, target, dl_dx, eta=0.1):
         dl_dx = dl_dx.view(output.size(0), -1) # resgaoe to [N x nb_out ]
         dl_ds = dl_dx
         cnt = len(self.modules)
         for module in self.modules[::-1]:  # start from the last one, loop to the first
             cnt -= 1
             if isinstance(module, Linear):
-                print("module ", cnt, " is linear")
-
-                print("dl_ds shape: ", dl_ds.size())
-                grad_w, grad_b, grad_x = module.backward(dl_ds)
-                print("grad_x shape:", grad_x.size())
-                dl_dx = grad_x.view(1,-1)
-                print("dl_dx shape: ", dl_dx.size())
-                # update parameters (TODO: choose step size)
-                module.param[0] -= grad_w
-                module.param[1] -= grad_b
+                # print("module ", cnt, " is linear")
+                # print("dl_ds shape: ", dl_ds.size())
+                module.backward(dl_ds)
+                # print("grad_x shape:", grad_x.size())
+                dl_dx = module.grad_x.view(1,-1)
+                #print("dl_dx shape: ", dl_dx.size())
 
             else:
-                print("module ", cnt, " is nonlinear")
+                #print("module ", cnt, " is nonlinear")
                 dsigma_ds = module.backward() # [N x nb_out]
-                print("dsigma_ds shape: ", dsigma_ds.size())
-                print("dl_dx shape: ", dl_dx.size())
+                #print("dsigma_ds shape: ", dsigma_ds.size())
+                #print("dl_dx shape: ", dl_dx.size())
                 dl_ds = dsigma_ds * dl_dx # elementwise [N x nb_out]
+
+
+    def step(self, eta = 0.01):
+        # TODO adaptive step size
+
+        for module in self.modules[::-1]:
+            if isinstance(module, Linear):
+                # update parameters
+                module.w -= eta * module.grad_w
+                module.b -= eta * module.grad_b
+                #print("norm W:", module.grad_w.std().mean())
+                #print("norm B:", module.grad_b.std().mean())
+                #print(layer)
 
 """ 
 Notation:
@@ -159,16 +171,15 @@ x1 = sigma(s1)
 (in order to have the correct indices ...)
 """
 if __name__ == '__main__':
-    nb_samples = 100
+    nb_samples = 1000
     nb_input = 10
     nb_output = 2
     x0 = torch.empty(nb_samples, nb_input).uniform_()
     target = torch.randint(0, 2, (nb_samples,))
 
-
-    network = Sequential(    Linear(nb_input,8),
+    network = Sequential(    Linear(nb_input,10),
                              ReLU(),
-                             Linear(8,5),
+                             Linear(10,5),
                              ReLU(),
                              Linear(5,nb_output)    )
     """
@@ -179,14 +190,25 @@ if __name__ == '__main__':
     """
 
     batch_size = 50
-    acc_loss = 0
-    criterion = LossMSE()
-    for b in range(0,x0.size(0),batch_size):
-        output = network.forward(x0.narrow(0,b,batch_size))
-        loss = criterion.compute_loss(output, target.narrow(0,b,batch_size))
-        dl_dx = criterion.get_gradient()
-        network.backward(output, target.narrow(0,b,batch_size), dl_dx)
-        acc_loss += loss.item()
+    nb_epochs = 20
 
-    print("Loss: ", acc_loss)
+    criterion = LossMSE()
+
+    for e in range(nb_epochs):
+        acc_loss = 0
+        for b in range(0,x0.size(0),batch_size):
+            # print(x0.narrow(0,b,batch_size))
+            output = network.forward(x0.narrow(0,b,batch_size))
+            # print("output", output)
+            loss = criterion.compute_loss(output, target.narrow(0,b,batch_size))
+            dl_dx = criterion.get_gradient()
+            #print("gradient: ", dl_dx)
+            network.backward(output, target.narrow(0,b,batch_size), dl_dx)
+
+            acc_loss += loss.item()
+            network.step()
+
+        print("Epoch: ", e, "Loss: ", acc_loss)
+
+    pred = network.forward(x0.narrow(0,0,20))
 
