@@ -11,8 +11,6 @@ class Superclass:
     def backward(self, grad):
         raise NotImplementedError
 
-    def param(self):
-        return []
 
 
 class Linear(Superclass):
@@ -22,7 +20,6 @@ class Linear(Superclass):
         self.nb_output = nb_output
         self.w = torch.empty(nb_output, nb_input).normal_(0, std_dev)  # initialize correct variances
         self.b = torch.empty(nb_output).normal_(0, std_dev)
-        # self.param = [self.w, self.b]
 
         self.grad_b = None
         self.grad_w = None
@@ -48,10 +45,7 @@ class Linear(Superclass):
         self.grad_w = grad_s.t() @ self.x
         self.grad_b = grad_s.sum(0)             # [ nb_out]
         self.grad_x = (grad_s @ self.w).sum(0)  # [N x nb_out] * [nb_out x nb_in], summing over N gives nb_in
-        # return self.grad_w, self.grad_b, self.grad_x
-
-    def param(self):
-        return self.parameters
+        return self.grad_w, self.grad_b, self.grad_x
 
 
 class ReLU(Superclass):
@@ -94,9 +88,9 @@ class LossMSE:
         self.loss = None
         self.gradient = None
 
-    def forward(self, pred, target):
+    def forward(self, pred, targ):
         # create one hot matrix
-        target = target.view(target.size(0),-1)  # add a dimension
+        target = targ.view(targ.size(0),-1)  # add a dimension
         one_hot = torch.empty(target.size(0), output.size(1), dtype=torch.long).zero_()
         one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
 
@@ -154,6 +148,11 @@ class Sequential(Superclass):
                 #print("norm B:", module.grad_b.std().mean())
                 #print(layer)
 
+
+def generate_disc_set(nb):
+    input = torch.empty(nb, 2).uniform_(0, 1) #[0, 1] uniformly distributed
+    target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
+    return input, target
 """ 
 Notation:
 s1 = w1 * x0 + b1
@@ -162,10 +161,15 @@ x1 = sigma(s1)
 """
 if __name__ == '__main__':
     nb_samples = 1000
-    nb_input = 10
+    nb_input = 2
     nb_output = 2
-    x0 = torch.empty(nb_samples, nb_input).uniform_()
-    target = torch.randint(0, 2, (nb_samples,))
+
+
+    train_input, train_target = generate_disc_set(nb_samples)
+    test_input, test_target = generate_disc_set(nb_samples)
+    mu, std = train_input.mean(), train_input.std()
+    train_input.sub_(mu).div_(std)
+    test_input.sub_(mu).div_(std)
 
     network = Sequential(    Linear(nb_input,10),
                              ReLU(),
@@ -186,18 +190,18 @@ if __name__ == '__main__':
 
     for e in range(nb_epochs):
         acc_loss = 0
-        for b in range(0,x0.size(0),batch_size):
+        for b in range(0,train_input.size(0),batch_size):
             # print(x0.narrow(0,b,batch_size))
-            output = network.forward(x0.narrow(0,b,batch_size))
+            output = network.forward(train_input.narrow(0,b,batch_size))
             # print("output", output)
-            loss = criterion.forward(output, target.narrow(0,b,batch_size))
+            loss = criterion.forward(output, train_target.narrow(0,b,batch_size))
             dl_dx = criterion.backward()
-            #print("gradient: ", dl_dx)
-            network.backward(output, target.narrow(0,b,batch_size), dl_dx)
+
+            network.backward(output, train_target.narrow(0,b,batch_size), dl_dx)
             acc_loss += loss.item()
             network.step()
 
         print("Epoch: ", e, "Loss: ", acc_loss)
 
-    pred = network.forward(x0.narrow(0,0,20))
+    pred = network.forward(test_input.narrow(0,0,20))
 
