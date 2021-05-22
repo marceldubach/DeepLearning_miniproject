@@ -28,16 +28,14 @@ class Linear(Superclass):
         self.grad_w = None
         self.grad_x = None
         self.x = None
-        #self.s = None
 
     def forward(self, x):
         """
             input:      x of size [N x nb_input]
             returns :   s, where s = w*x + b [N x nb_output]
         """
-        self.x = torch.empty(x.size()).zero_()
+        self.x = x
         s = x @ self.w.t() + self.b
-        #print("self.x stored")
         return s
 
     def backward(self, grad_s):
@@ -47,8 +45,6 @@ class Linear(Superclass):
                         grad_b (=dl_db) [nb_out],
                         grad_x (=dl_dx) [nb_in]
         """
-        #print("size self.x", self.x.size())
-        #print("size grad_s", grad_s.size())
         self.grad_w = grad_s.t() @ self.x
         self.grad_b = grad_s.sum(0)             # [ nb_out]
         self.grad_x = (grad_s @ self.w).sum(0)  # [N x nb_out] * [nb_out x nb_in], summing over N gives nb_in
@@ -98,24 +94,18 @@ class LossMSE:
         self.loss = None
         self.gradient = None
 
-    def compute_loss(self, output, target):
+    def forward(self, pred, target):
         # create one hot matrix
         target = target.view(target.size(0),-1)  # add a dimension
         one_hot = torch.empty(target.size(0), output.size(1), dtype=torch.long).zero_()
         one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
-        #  print("one hot", one_hot)
-        #  print("target", target)
 
-        sample_loss = (one_hot - output).pow(2).sum(dim=1)
-        sample_loss = sample_loss.view(output.size(0), 1)
+        self.loss = (pred - one_hot).pow(2).mean(dim=0).sum()
 
-        self.loss = sample_loss.sum() # sum over all samples
-        #  print("loss ", self.loss)
-
-        self.gradient = 2 * (output - one_hot)
+        self.gradient = 2 * (pred - one_hot) / pred.size(0)
         return self.loss
 
-    def get_gradient(self):
+    def backward(self):
         return self.gradient
 
 
@@ -200,11 +190,10 @@ if __name__ == '__main__':
             # print(x0.narrow(0,b,batch_size))
             output = network.forward(x0.narrow(0,b,batch_size))
             # print("output", output)
-            loss = criterion.compute_loss(output, target.narrow(0,b,batch_size))
-            dl_dx = criterion.get_gradient()
+            loss = criterion.forward(output, target.narrow(0,b,batch_size))
+            dl_dx = criterion.backward()
             #print("gradient: ", dl_dx)
             network.backward(output, target.narrow(0,b,batch_size), dl_dx)
-
             acc_loss += loss.item()
             network.step()
 
