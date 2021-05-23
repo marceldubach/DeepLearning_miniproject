@@ -1,9 +1,10 @@
 from torch import empty
-import torch
-#from torch import Tensor
 import math
+import torch
+# TODO check if math and torch import need to be removed
 
-class Superclass:
+
+class Module:
     def forward(self, x):
         raise NotImplementedError
 
@@ -11,15 +12,13 @@ class Superclass:
         raise NotImplementedError
 
 
-
-class Linear(Superclass):
-    def __init__(self, nb_input, nb_output,id):
+class Linear(Module):
+    def __init__(self, nb_input, nb_output):
         std_dev = math.sqrt(2/(nb_input + nb_output))
         self.nb_input = nb_input
         self.nb_output = nb_output
         self.w = empty(nb_output, nb_input).normal_(0, std_dev)  # initialize correct variances
         self.b = empty(nb_output).normal_(0, std_dev)
-        self.id = id
 
         self.grad_b = None
         self.grad_w = None
@@ -48,7 +47,7 @@ class Linear(Superclass):
         return self.grad_x
 
 
-class ReLU(Superclass):
+class ReLU(Module):
     def __init__(self):
         self.param = []
         self.gradient = None    # gradient dl_dxl (derivative w.r.t. the output)
@@ -66,7 +65,7 @@ class ReLU(Superclass):
         return self.gradient
 
 
-class Tanh(Superclass):
+class Tanh(Module):
     def __init__(self):
         self.param = []
         self.gradient = None
@@ -82,7 +81,8 @@ class Tanh(Superclass):
         self.gradient = 1/self.s.cosh().pow(2)
         return self.gradient
 
-class LossMSE(Superclass):
+
+class LossMSE(Module):
     def __init__(self):
         self.loss = None
         self.gradient = None
@@ -90,19 +90,25 @@ class LossMSE(Superclass):
     def forward(self, pred, targ):
         # create one hot matrix
         target = targ.view(targ.size(0),-1)  # add a dimension
-        one_hot = empty(target.size(0), pred.size(1), dtype=torch.long).zero_()
-        one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
 
-        self.loss = (pred - one_hot).pow(2).mean(dim=0).sum()
-
-        self.gradient = 2 * (pred - one_hot) / pred.size(0)
+        if pred.size(1) > 1:
+            # convert to one hot encoding
+            one_hot = empty(target.size(0), pred.size(1), dtype=torch.long).zero_()
+            one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
+            self.loss = (pred - one_hot).pow(2).mean(dim=0).sum()
+            self.gradient = 2*(pred- one_hot)/pred.size(0)
+        else:
+            # if output dimension is only one, no need to convert target to one hot encoding
+            self.loss = (pred - target).pow(2).sum()
+            # compute the SQUARED error (not normalized by number of samples)
+            self.gradient = 2*(pred - target) / pred.size(0)
         return self.loss
 
     def backward(self):
         return self.gradient
 
 
-class Sequential(Superclass):
+class Sequential(Module):
     def __init__(self, *modules):
         self.modules = modules
         if not isinstance(self.modules[-1], LossMSE):
@@ -134,83 +140,8 @@ class Sequential(Superclass):
                 dsigma_ds = module.backward() # [N x nb_out]
                 dl_ds = dsigma_ds * dl_dx # elementwise [N x nb_out]
 
-
-
     def step(self, eta = 0.1):
         for module in self.modules[-2::-1]:
-            if isinstance(module, Linear):
-                # update parameters
-                #print("BEFORE UPDATE Linear layer:", module.id, "w", module.w.std().mean().item(), "b", module.b.std().mean().item())
+            if isinstance(module, Linear):  # update the parameter for all linear modules
                 module.w -= eta * module.grad_w
                 module.b -= eta * module.grad_b
-                #print("AFTER UPDATE Linear layer:", module.id, "w", module.w.std().mean().item(), "b", module.b.std().mean().item())
-
-def compute_nb_errors(prediction, target):
-        nb_errors = 0
-        _, predicted_classes = prediction.max(1)
-        for k in range(prediction.size(0)):
-            if target[k] != predicted_classes[k]:
-                nb_errors = nb_errors + 1
-        return nb_errors
-
-def generate_disc_set(nb):
-    input = empty((nb, 2)).uniform_(0,1)    # initialize input array
-    target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
-    return input, target
-
-""" 
-Notation:
-s1 = w1 * x0 + b1
-x1 = sigma(s1)
-(in order to have the correct indices ...)
-"""
-
-
-if __name__ == '__main__':
-    #torch.manual_seed(42)
-    nb_samples = 1000
-    nb_input = 2
-    nb_output = 2
-
-    train_input, train_target = generate_disc_set(nb_samples)
-    test_input, test_target = generate_disc_set(nb_samples)
-    mu, std = train_input.mean(dim=0), train_input.std()
-    train_input.sub_(mu).div_(std)
-    test_input.sub_(mu).div_(std)
-    print("Number of 1: ", train_target.sum())
-    network = Sequential(    Linear(nb_input,25,1),
-                             ReLU(),
-                             Linear(25,25,2),
-                             ReLU(),
-                             Linear(25,25,2),
-                             ReLU(),
-                             Linear(25,nb_output,3),
-                             Tanh(),
-                             LossMSE())
-
-    batch_size = 50
-    nb_epochs = 50
-
-    for e in range(nb_epochs):
-        indexes = torch.randperm(train_input.size(0))
-        acc_loss = 0
-        errors = 0
-        for b in range(0, train_input.size(0), batch_size):
-            batch_input = train_input[indexes.narrow(0,b,batch_size)]
-            batch_target = train_target[indexes.narrow(0,b,batch_size)]
-
-            # print(x0.narrow(0,b,batch_size))
-            batch_output = network.forward(batch_input)
-
-            errors = errors + compute_nb_errors(batch_output, batch_target)
-            # print("output", output)
-            loss = network.loss(batch_target)
-            network.backward()
-            network.step(0.05)
-
-            acc_loss += loss.item()
-
-        print("Epoch: ", e, "Loss: ", acc_loss, ", nb errors: ", errors)
-
-    pred = network.forward(test_input.narrow(0,0,20))
-
