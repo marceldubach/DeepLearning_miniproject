@@ -51,7 +51,7 @@ if __name__ == '__main__':
     # training parameters
     batch_size = 50
     nb_epochs = 50
-    learning_rate = 0.05
+    learning_rate = 0.1
 
     # generate and normalize the data
     train_input, train_target = generate_disc_set(nb_samples)
