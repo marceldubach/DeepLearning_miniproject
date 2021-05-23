@@ -39,7 +39,9 @@ def generate_disc_set(nb_samples):
     NOTE: this dataset is balanced when samples are uniformly distributed
     """
     input = empty((nb_samples, 2)).uniform_(0,1)
-    target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
+    target = input.sub(0.5).pow(2).sum(dim=1).sub(1/(2*math.pi)).sign().add(1).div(2).long()
+    target = (-target).add(1)
+
     return input, target
 
 
@@ -76,6 +78,11 @@ def train_model(network, train_input, train_target, nb_epochs, learning_rate, do
         acc_loss = 0                                  # accumulated loss for the current epoch
         nb_errors = 0                                 # number of errors for the current epoch
 
+        if do_test:
+            test_loss, test_errors = test_model(network, test_input, test_target, batch_size)
+            test_loss_rec[e] = test_loss
+            test_error_rec[e] = test_errors
+
         for b in range(0, train_input.size(0), batch_size):
             # retrieve a shuffled batch
             batch_input = train_input[indexes.narrow(0,b,batch_size)]
@@ -96,11 +103,6 @@ def train_model(network, train_input, train_target, nb_epochs, learning_rate, do
         error_rec[e] = nb_errors
         loss_rec[e] = acc_loss
 
-        if do_test:
-            test_loss, test_errors = test_model(network, test_input, test_target, batch_size)
-            test_loss_rec[e] = test_loss
-            test_error_rec[e] = test_errors
-
     if do_test:
         return loss_rec, error_rec, test_loss_rec, test_error_rec
 
@@ -110,7 +112,7 @@ def train_model(network, train_input, train_target, nb_epochs, learning_rate, do
 
 def plot_results(train_loss_data, train_error_data, test_loss_data=None, test_error_data = None, do_test=False):
     plt.figure()
-    plt.title('Training loss')
+    plt.title('Training loss', fontsize=18)
     plt.semilogy(np.arange(nb_epochs), train_loss_data[0], '--r', label='LR = 0.01 (train)')
     if do_test:
         plt.semilogy(np.arange(nb_epochs), test_loss_data[0], 'r', label='LR = 0.01 (test)')
@@ -120,31 +122,65 @@ def plot_results(train_loss_data, train_error_data, test_loss_data=None, test_er
     plt.semilogy(np.arange(nb_epochs), train_loss_data[2], '--b', label='LR = 0.1 (train)')
     if do_test:
         plt.semilogy(np.arange(nb_epochs), test_loss_data[2], 'b', label='LR = 0.1 (test)')
-    plt.xlabel('Learning epoch')
-    plt.ylabel('Loss')
+    plt.xlabel('Learning epoch', fontsize=16)
+    plt.ylabel('Loss', fontsize=16)
     plt.ylim((1e1, 1e3))
     plt.legend()
     plt.savefig('loss.png')
     plt.savefig('loss.eps', format='eps')
 
     plt.figure()
-    plt.title('Train and test error rate')
-    plt.plot(np.arange(nb_epochs), train_error_data[0], '--r', label='LR = 0.01 (train)')
+    plt.title('Train and test error rate', fontsize=18)
+    plt.plot(np.arange(nb_epochs), train_error_data[0]/nb_samples*100, '--r', label='LR = 0.01 (train)')
     if do_test:
-        plt.plot(np.arange(nb_epochs), test_error_data[0], 'r', label='LR = 0.01 (test)')
-    plt.plot(np.arange(nb_epochs), train_error_data[1], '--g', label='LR = 0.05 (train)')
+        plt.plot(np.arange(nb_epochs), test_error_data[0]/nb_samples*100, 'r', label='LR = 0.01 (test)')
+    plt.plot(np.arange(nb_epochs), train_error_data[1]/nb_samples*100, '--g', label='LR = 0.05 (train)')
     if do_test:
-        plt.plot(np.arange(nb_epochs), test_error_data[1], 'g', label='LR = 0.05 (test)')
-    plt.plot(np.arange(nb_epochs), train_error_data[2], '--b', label='LR = 0.1 (train)')
+        plt.plot(np.arange(nb_epochs), test_error_data[1]/nb_samples*100, 'g', label='LR = 0.05 (test)')
+    plt.plot(np.arange(nb_epochs), train_error_data[2]/nb_samples*100, '--b', label='LR = 0.1 (train)')
     if do_test:
-        plt.plot(np.arange(nb_epochs), test_error_data[2], 'b', label='LR = 0.1 (test)')
-    plt.xlabel('Learning epoch')
-    plt.ylabel('Error rate [%]')
+        plt.plot(np.arange(nb_epochs), test_error_data[2]/nb_samples*100, 'b', label='LR = 0.1 (test)')
+    plt.xlabel('Learning epoch', fontsize=16)
+    plt.ylabel('Error rate [%]', fontsize=16)
     plt.legend()
     plt.savefig('error_rate.png')
     plt.savefig('error_rate.eps', format='eps')
 
     print("Saved results as 'loss.png' and error_rate.png'")
+
+def visualize_prediction(network, test_input, test_iput_original):
+
+    batch_size = 50
+    plt.figure()
+    nb_errors = 0
+    for b in range(0,test_input.size(0), batch_size):
+        batch_input = test_input.narrow(0,b,batch_size)
+        batch_input_original = test_iput_original.narrow(0,b,batch_size)
+        batch_output = network.forward(batch_input)
+
+
+        batch_target = test_target.narrow(0,b,batch_size)
+        nb_errors = nb_errors + compute_nb_errors(batch_output, batch_target)
+
+        batch_output = batch_output.view(batch_output.size(0))
+        pred1 = batch_input_original[batch_output >= 0.5]
+        pred0 = batch_input_original[batch_output < 0.5]
+
+        plt.plot(pred1[:,0].data.numpy(), pred1[:,1].data.numpy(), 'ro')
+        plt.plot(pred0[:,0].data.numpy(), pred0[:,1].data.numpy(), 'bo')
+
+    plt.title('MLP predictions', fontsize=18)
+    plt.legend(['class 1', 'class 0'])
+    plt.xlabel(r'$x_1$', fontsize=16)
+    plt.ylabel(r'$x_2$', fontsize=16)
+    plt.axis('equal')
+    plt.xlim((0,1))
+    plt.ylim((0,1))
+    plt.savefig('MLP_prediction.png')
+    plt.savefig('MLP_prediction.eps', format='eps')
+
+    print("Error rate: {:.2f}%".format(nb_errors/nb_samples*100))
+    print("Saved visualization of model prediction to 'MLP_prediction.png'")
 
 
 if __name__ == '__main__':
@@ -157,15 +193,15 @@ if __name__ == '__main__':
     do_test = True
 
     # generate and normalize the data
-    train_input, train_target = generate_disc_set(nb_samples)
-    test_input, test_target = generate_disc_set(nb_samples)
-    mu, std = train_input.mean(dim=0), train_input.std()
-    train_input.sub_(mu).div_(std)
-    test_input.sub_(mu).div_(std)
+    train_input_original, train_target = generate_disc_set(nb_samples)
+    test_input_original, test_target = generate_disc_set(nb_samples)
+    mu, std = train_input_original.mean(dim=0), train_input_original.std()
+    train_input = train_input_original.sub(mu).div(std)
+    test_input = test_input_original.sub(mu).div(std)
 
+    train_loss_data = empty(len(learning_rates), nb_epochs).zero_()
+    train_error_data = empty(len(learning_rates), nb_epochs).zero_()
     if do_test:
-        train_loss_data = empty(len(learning_rates), nb_epochs).zero_()
-        train_error_data = empty(len(learning_rates), nb_epochs).zero_()
         test_loss_data = empty(len(learning_rates), nb_epochs).zero_()
         test_error_data = empty(len(learning_rates), nb_epochs).zero_()
 
@@ -197,3 +233,17 @@ if __name__ == '__main__':
 
     if do_test:
         plot_results(train_loss_data, train_error_data, test_loss_data, test_error_data, do_test)
+
+    # Train a final model over 25 epochs
+    network = Sequential(Linear(nb_input, 25),
+                         ReLU(),
+                         Linear(25, 25),
+                         ReLU(),
+                         Linear(25, 25),
+                         ReLU(),
+                         Linear(25, nb_output),
+                         Tanh(),
+                         LossMSE())
+
+    train_loss_rec, train_err_rec = train_model(network, train_input, train_target, nb_epochs, lr)
+    visualize_prediction(network, test_input, test_input_original)

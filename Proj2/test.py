@@ -37,7 +37,9 @@ def generate_disc_set(nb_samples):
     NOTE: this dataset is balanced when samples are uniformly distributed
     """
     input = empty((nb_samples, 2)).uniform_(0,1)
-    target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
+    target = input.sub(0.5).pow(2).sum(dim=1).sub(1/(2*math.pi)).sign().add(1).div(2).long()
+    target = (-target).add(1)
+
     return input, target
 
 
@@ -50,7 +52,7 @@ if __name__ == '__main__':
 
     # training parameters
     batch_size = 50
-    nb_epochs = 50
+    nb_epochs = 25
     learning_rate = 0.1
 
     # generate and normalize the data
