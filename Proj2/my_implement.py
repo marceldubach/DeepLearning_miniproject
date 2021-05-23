@@ -33,7 +33,7 @@ class Linear(Superclass):
             returns :   s, where s = w*x + b [N x nb_output]
         """
         self.x = x
-        s = x @ self.w.t() + self.b # [ N x nb_in] x [ nb_in x nb_out ] + [1 x nb_b]
+        s = x @ self.w.t() + self.b             # [ N x nb_in] x [ nb_in x nb_out ] + [1 x nb_b]
         return s
 
     def backward(self, grad_s):
@@ -43,15 +43,9 @@ class Linear(Superclass):
                         grad_b (=dl_db) [nb_out],
                         grad_x (=dl_dx) [nb_in]
         """
-        if self.grad_w is not None:
-            self.grad_w.zero_()
-            self.grad_b.zero_()
-            self.grad_x.zero_()
-
         self.grad_w = grad_s.t() @ self.x       # [nb_out x nb_in]
         self.grad_b = grad_s.sum(0)             # [nb_out] sum over samples
-        self.grad_x = (grad_s @ self.w).sum(0)  # [N x nb_out] * [nb_out x nb_in], summing over N gives nb_in
-        #print("Linear ", self.id, "W:", self.grad_w.std().mean(), "B:", self.grad_b)
+        self.grad_x = (grad_s @ self.w)         # [N x nb_out] * [nb_out x nb_in], summing over N gives nb_in
         return self.grad_x
 
 
@@ -69,10 +63,7 @@ class ReLU(Superclass):
         return self.x
 
     def backward(self):
-        #if self.gradient is not None:
-            #self.gradient.zero_()
         self.gradient = self.s.sign().add(1).div(2).floor()
-        #self.gradient = torch.ones(self.s.size())
         return self.gradient
 
 
@@ -89,12 +80,10 @@ class Tanh(Superclass):
         return self.x
 
     def backward(self):
-        #if self.gradient is not None:
-            #self.gradient.zero_()
         self.gradient = 1/self.s.cosh().pow(2)
         return self.gradient
 
-class LossMSE:
+class LossMSE(Superclass):
     def __init__(self):
         self.loss = None
         self.gradient = None
@@ -117,39 +106,39 @@ class LossMSE:
 class Sequential(Superclass):
     def __init__(self, *modules):
         self.modules = modules
+        if not isinstance(self.modules[-1], LossMSE):
+            raise NameError('Last module should be instance of LossMSE')
+        self.output = None
 
     def forward(self,x):
         x0 = x
-        for module in self.modules:
+        for module in self.modules[:-1]:
             x1 = module.forward(x0)
             x0 = x1
-        return x1
+        self.output = x1
+        return self.output
 
-    def backward(self, output, target, dl_dx, eta=0.1):
-        dl_dx = dl_dx.view(output.size(0), -1) # resgaoe to [N x nb_out ]
+    def loss(self, target):
+        loss_module = self.modules[-1]
+        loss = loss_module.forward(self.output, target)
+        return loss
+
+    def backward(self, eta=0.1):
+        loss_module = self.modules[-1]
+        dl_dx = loss_module.backward()
         dl_ds = dl_dx
-        cnt = len(self.modules)
-        for module in self.modules[::-1]:  # start from the last one, loop to the first
-            cnt -= 1
-            if isinstance(module, Linear):
-                # print("module ", cnt, " is linear")
-                # print("dl_ds shape: ", dl_ds.size())
-                dl_dx = module.backward(dl_ds).view(1,-1)
 
-                dl_ds.zero_()
-                # print("grad_x shape:", grad_x.size())
+        for module in self.modules[-2::-1]:  # start from the last one, loop to the first
+            if isinstance(module, Linear):
+                dl_dx = module.backward(dl_ds)
             else:
-                #print("module ", cnt, " is nonlinear")
                 dsigma_ds = module.backward() # [N x nb_out]
-                #print("dsigma_ds shape: ", dsigma_ds.size())
-                #print("dl_dx shape: ", dl_dx.size())
                 dl_ds = dsigma_ds * dl_dx # elementwise [N x nb_out]
-                dl_dx.zero_()
+
 
 
     def step(self, eta = 0.1):
-        for module in self.modules[::-1]:
-
+        for module in self.modules[-2::-1]:
             if isinstance(module, Linear):
                 # update parameters
                 #print("BEFORE UPDATE Linear layer:", module.id, "w", module.w.std().mean().item(), "b", module.b.std().mean().item())
@@ -166,7 +155,7 @@ def compute_nb_errors(prediction, target):
         return nb_errors
 
 def generate_disc_set(nb):
-    input = torch.empty(nb, 2).uniform_(0, 1) #[0, 1] uniformly distributed
+    input = torch.empty((nb, 2)).uniform_(0,1)    # initialize input array
     target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
     return input, target
 
@@ -193,29 +182,29 @@ x1 = sigma(s1)
 (in order to have the correct indices ...)
 """
 if __name__ == '__main__':
+    #torch.manual_seed(42)
     nb_samples = 1000
     nb_input = 2
     nb_output = 2
 
-
-    train_input, train_target = generate_rectangle_set(nb_samples)
-    test_input, test_target = generate_rectangle_set(nb_samples)
-    mu, std = train_input.mean(), train_input.std()
+    train_input, train_target = generate_disc_set(nb_samples)
+    test_input, test_target = generate_disc_set(nb_samples)
+    mu, std = train_input.mean(dim=0), train_input.std()
     train_input.sub_(mu).div_(std)
     test_input.sub_(mu).div_(std)
-
+    print("Number of 1: ", train_target.sum())
     network = Sequential(    Linear(nb_input,25,1),
                              ReLU(),
-                             Linear(25,5,2),
+                             Linear(25,25,2),
                              ReLU(),
-                             Linear(5,nb_output,3)    )
-
+                             Linear(25,25,2),
+                             ReLU(),
+                             Linear(25,nb_output,3),
+                             Tanh(),
+                             LossMSE())
 
     batch_size = 50
-    nb_epochs = 20
-
-    criterion = LossMSE()
-    count_step = 0
+    nb_epochs = 50
 
     for e in range(nb_epochs):
         indexes = torch.randperm(train_input.size(0))
@@ -230,15 +219,11 @@ if __name__ == '__main__':
 
             errors = errors + compute_nb_errors(batch_output, batch_target)
             # print("output", output)
-            loss = criterion.forward(batch_output,batch_target)
-            dl_dx = criterion.backward()
+            loss = network.loss(batch_target)
+            network.backward()
+            network.step(0.05)
 
-            network.backward(batch_output, batch_target, dl_dx)
             acc_loss += loss.item()
-
-            network.step()
-
-            count_step += 1
 
         print("Epoch: ", e, "Loss: ", acc_loss, ", nb errors: ", errors)
 
