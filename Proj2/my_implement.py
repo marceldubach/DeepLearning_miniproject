@@ -1,8 +1,7 @@
+from torch import empty
 import torch
+#from torch import Tensor
 import math
-
-torch.set_grad_enabled(False)
-
 
 class Superclass:
     def forward(self, x):
@@ -18,8 +17,8 @@ class Linear(Superclass):
         std_dev = math.sqrt(2/(nb_input + nb_output))
         self.nb_input = nb_input
         self.nb_output = nb_output
-        self.w = torch.empty(nb_output, nb_input).normal_(0, std_dev)  # initialize correct variances
-        self.b = torch.empty(nb_output).normal_(0, std_dev)
+        self.w = empty(nb_output, nb_input).normal_(0, std_dev)  # initialize correct variances
+        self.b = empty(nb_output).normal_(0, std_dev)
         self.id = id
 
         self.grad_b = None
@@ -91,7 +90,7 @@ class LossMSE(Superclass):
     def forward(self, pred, targ):
         # create one hot matrix
         target = targ.view(targ.size(0),-1)  # add a dimension
-        one_hot = torch.empty(target.size(0), pred.size(1), dtype=torch.long).zero_()
+        one_hot = empty(target.size(0), pred.size(1), dtype=torch.long).zero_()
         one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
 
         self.loss = (pred - one_hot).pow(2).mean(dim=0).sum()
@@ -155,25 +154,9 @@ def compute_nb_errors(prediction, target):
         return nb_errors
 
 def generate_disc_set(nb):
-    input = torch.empty((nb, 2)).uniform_(0,1)    # initialize input array
+    input = empty((nb, 2)).uniform_(0,1)    # initialize input array
     target = input.sub(0.5).pow(2).sum(1).sub(1 / (2*math.pi)).sign().add(1).div(2).long()
     return input, target
-
-def generate_hyperplane_set(nb):
-    input = torch.empty(nb, 2).uniform_(0, 1) #[0, 1] uniformly distributed
-    normal = torch.empty(2).uniform_(0,1) # normal vector
-    target = (input @ normal).sign().add(1).div(2).long()
-    return input, target
-
-def generate_rectangle_set(nb):
-    input = torch.empty(nb, 2).uniform_(-1, 1)  # [0, 1] uniformly distributed
-    target = torch.zeros(nb).long()
-    x_arr = torch.logical_and(input[:,0]>-0.5, input[:,0]<0.5)
-    y_arr = torch.logical_and(input[:, 1] > -0.5, input[:, 1] < 0.5)
-    logic = torch.logical_and(x_arr, y_arr)
-    target[logic] = 1
-    return input, target
-
 
 """ 
 Notation:
@@ -181,6 +164,8 @@ s1 = w1 * x0 + b1
 x1 = sigma(s1)
 (in order to have the correct indices ...)
 """
+
+
 if __name__ == '__main__':
     #torch.manual_seed(42)
     nb_samples = 1000
