@@ -1,6 +1,6 @@
-from torch import empty
-import torch
 from MLP_toolbox import Linear, ReLU, Tanh, LossMSE, Sequential
+from torch import empty
+from torch import randperm  # used for random permutation for training
 import math
 
 
@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
     for e in range(nb_epochs):
 
-        indexes = torch.randperm(train_input.size(0))       # random index array without repetition
+        indexes = randperm(train_input.size(0))       # random index array without repetition
         acc_loss = 0                                        # accumulated loss for the current epoch
         errors = 0                                          # number of errors for the current epoch
 
