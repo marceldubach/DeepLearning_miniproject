@@ -1,8 +1,5 @@
 from torch import empty
 import math
-import torch
-# TODO check if math and torch import need to be removed
-
 
 class Module:
     def forward(self, x):
@@ -93,8 +90,8 @@ class LossMSE(Module):
 
         if pred.size(1) > 1:
             # convert to one hot encoding
-            one_hot = empty(target.size(0), pred.size(1), dtype=torch.long).zero_()
-            one_hot = one_hot.scatter_(1, target, 1).to(torch.float32) # convert to float
+            one_hot = empty(target.size(0), pred.size(1)).long().zero_()
+            one_hot = one_hot.scatter_(1, target, 1).float() # convert to float
             self.loss = (pred - one_hot).pow(2).mean(dim=0).sum()
             self.gradient = 2*(pred- one_hot)/pred.size(0)
         else:
