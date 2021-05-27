@@ -255,7 +255,7 @@ if __name__ == '__main__':
     # define criterion for classification
     criterion = nn.CrossEntropyLoss()
 
-    for model, name in zip([Net_base(), Net_siamese(), Net_aux_loss()], ["simple", "siamese", "auxiliary"]):
+    for model, name in zip([Net_base(), Net_siamese(), Net_aux_loss()], ["Base network", "Siamese network", "Auxiliary network"]):
 
         train_errors = []
         test_errors = []
