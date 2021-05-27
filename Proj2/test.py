@@ -73,6 +73,7 @@ if __name__ == '__main__':
                              Tanh(),
                              LossMSE())
 
+    # TRAINING OF THE NETWORK
     for e in range(nb_epochs):
 
         indexes = randperm(train_input.size(0))       # random index array without repetition
@@ -97,5 +98,53 @@ if __name__ == '__main__':
             network.step(learning_rate)
 
         print("Training epoch {:d}: \t loss value: {:.2f}, \t error rate: {:.2f}%".format(e, acc_loss, errors/nb_samples*100))
+
+    # OUTPUT THE FINAL PERFORMANCE ON THE TRAINING SET
+    train_loss = 0
+    train_errors = 0
+
+    for b in range(0, train_input.size(0), batch_size):
+        # retrieve a shuffled batch
+        batch_input = train_input.narrow(0, b, batch_size)
+        batch_target = train_target.narrow(0, b, batch_size)
+
+        # model prediction
+        batch_output = network.forward(batch_input)
+
+        # accumulate loss and errors
+        loss = network.loss(batch_target)
+        train_errors = train_errors + compute_nb_errors(batch_output, batch_target)
+        train_loss += loss.item()
+
+        # train the model
+        network.backward()
+        network.step(learning_rate)
+
+    print("-------------------------------------------------------------")
+    print("Training dataset: \t Loss: {:.2f} \t error rate: {:.2f}%".format(train_loss, train_errors/nb_samples*100))
+
+    # OUTPUT THE FINAL PERFORMANCE ON THE TESTING SET
+    test_loss = 0
+    test_errors = 0
+
+    for b in range(0, test_input.size(0), batch_size):
+        # retrieve a shuffled batch
+        batch_input = test_input.narrow(0, b, batch_size)
+        batch_target = test_target.narrow(0, b, batch_size)
+
+        # model prediction
+        batch_output = network.forward(batch_input)
+
+        # accumulate loss and errors
+        loss = network.loss(batch_target)
+        test_errors = test_errors + compute_nb_errors(batch_output, batch_target)
+        test_loss += loss.item()
+
+        # train the model
+        network.backward()
+        network.step(learning_rate)
+    print("-------------------------------------------------------------")
+    print("Test dataset: \t\t Loss: {:.2f} \t error rate: {:.2f}%".format(test_loss, test_errors / nb_samples * 100))
+
 
 
