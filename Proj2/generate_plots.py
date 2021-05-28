@@ -127,7 +127,7 @@ def plot_results(train_loss_data, train_error_data, test_loss_data=None, test_er
     plt.ylim((1e1, 1e3))
     plt.legend()
     plt.savefig('loss.png')
-    plt.savefig('loss.eps', format='eps')
+    #plt.savefig('loss.eps', format='eps')
 
     plt.figure()
     plt.title('Train and test error rate', fontsize=18)
@@ -144,7 +144,7 @@ def plot_results(train_loss_data, train_error_data, test_loss_data=None, test_er
     plt.ylabel('Error rate [%]', fontsize=16)
     plt.legend()
     plt.savefig('error_rate.png')
-    plt.savefig('error_rate.eps', format='eps')
+    #plt.savefig('error_rate.eps', format='eps')
 
     print("Saved results as 'loss.png' and error_rate.png'")
 
@@ -177,9 +177,9 @@ def visualize_prediction(network, test_input, test_iput_original):
     plt.xlim((0,1))
     plt.ylim((0,1))
     plt.savefig('MLP_prediction.png')
-    plt.savefig('MLP_prediction.eps', format='eps')
+    #plt.savefig('MLP_prediction.eps', format='eps')
 
-    print("Error rate: {:.2f}%".format(nb_errors/nb_samples*100))
+    print("Test error rate: {:.2f}%".format(nb_errors/nb_samples*100))
     print("Saved visualization of model prediction to 'MLP_prediction.png'")
 
 
@@ -245,5 +245,6 @@ if __name__ == '__main__':
                          Tanh(),
                          LossMSE())
 
-    train_loss_rec, train_err_rec = train_model(network, train_input, train_target, nb_epochs, lr)
+
+    # test dataset
     visualize_prediction(network, test_input, test_input_original)
