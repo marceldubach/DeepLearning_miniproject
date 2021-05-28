@@ -245,6 +245,8 @@ if __name__ == '__main__':
                          Tanh(),
                          LossMSE())
 
-
+    # train model before testing
+    lr = 0.1
+    train_model(network, train_input, train_target, nb_epochs, lr)
     # test dataset
     visualize_prediction(network, test_input, test_input_original)
